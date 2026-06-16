@@ -31,7 +31,9 @@ git push -u origin main
 
 1. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub**
 2. Select your repo
-3. Set **Root Directory** to `backend`
+3. **Important (monorepo):** either option works:
+   - **Option A (recommended):** Service → **Settings** → **Root Directory** → set to `backend`
+   - **Option B:** leave root as `/` — the repo root `package.json` + `railway.toml` build `backend/` for you
 4. Add variables:
 
 | Variable | Value |

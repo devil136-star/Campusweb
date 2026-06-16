@@ -1,0 +1,13 @@
+{
+  "name": "campusweb",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CampusWeb monorepo — Railway entrypoint delegates to backend/",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "build": "npm ci --prefix backend && npm run build --prefix backend",
+    "start": "npm run start --prefix backend"
+  }
+}

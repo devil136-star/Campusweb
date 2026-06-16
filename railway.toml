@@ -1,0 +1,11 @@
+# Monorepo: API lives in backend/. Railway builds from repo root by default.
+# Alternatively, set Service → Settings → Root Directory to "backend".
+
+[build]
+buildCommand = "npm ci --prefix backend && npm run build --prefix backend"
+watchPatterns = ["backend/**"]
+
+[deploy]
+startCommand = "npm run start --prefix backend"
+healthcheckPath = "/api/health"
+restartPolicyType = "on_failure"
