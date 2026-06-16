@@ -1,5 +1,6 @@
 import { Router, Response } from "express";
 import { prisma } from "../lib/prisma";
+import { getIO } from "../lib/io";
 import { authMiddleware, AuthRequest } from "../middleware/auth";
 
 const router = Router();
@@ -84,6 +85,8 @@ router.post("/:channelId", async (req: AuthRequest, res: Response) => {
       user: { select: { id: true, name: true } },
     },
   });
+
+  getIO()?.to(`channel:${channelId}`).emit("new_message", { message });
 
   res.status(201).json({ message });
 });

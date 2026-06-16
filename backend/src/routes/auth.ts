@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "../lib/prisma";
 import { signToken } from "../lib/jwt";
 import { getEmailValidationError } from "../lib/email";
+import { ensurePublicChannels, joinUserToPublicChannels } from "../lib/defaults";
 import { authMiddleware, AuthRequest } from "../middleware/auth";
 
 const router = Router();
@@ -46,14 +47,10 @@ router.post("/register", async (req, res: Response) => {
   });
 
   const publicChannels = await prisma.channel.findMany({ where: { isPrivate: false } });
-  if (publicChannels.length > 0) {
-    await prisma.channelMember.createMany({
-      data: publicChannels.map((channel) => ({
-        userId: user.id,
-        channelId: channel.id,
-      })),
-    });
+  if (publicChannels.length === 0) {
+    await ensurePublicChannels(user.id);
   }
+  await joinUserToPublicChannels(user.id);
 
   const token = signToken({ userId: user.id, email: user.email });
   res.status(201).json({
@@ -78,6 +75,8 @@ router.post("/login", async (req, res: Response) => {
     res.status(401).json({ error: "Invalid email or password" });
     return;
   }
+
+  await joinUserToPublicChannels(user.id);
 
   const token = signToken({ userId: user.id, email: user.email });
   res.json({

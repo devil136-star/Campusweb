@@ -16,10 +16,16 @@ interface ChatSidebarProps {
   userName: string;
   onSelectChannel: (channelId: string) => void;
   onSelectConversation: (conversationId: string) => void;
-  onCreateChannel: (name: string, description: string) => Promise<void>;
+  onCreateChannel: (
+    name: string,
+    description: string,
+    options: { isPrivate: boolean; inviteUserIds: string[] }
+  ) => Promise<void>;
   onJoinChannel: (channelId: string) => Promise<void>;
   onStartDm: (user: User) => Promise<void>;
+  onInviteToChannel: (channelId: string, user: User) => Promise<void>;
   onSearchUsers: (query: string) => Promise<User[]>;
+  activeChannel: Channel | null;
   onLogout: () => void;
 }
 
@@ -37,28 +43,71 @@ export function ChatSidebar({
   onCreateChannel,
   onJoinChannel,
   onStartDm,
+  onInviteToChannel,
   onSearchUsers,
+  activeChannel,
   onLogout,
 }: ChatSidebarProps) {
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDesc, setNewDesc] = useState("");
+  const [newPrivate, setNewPrivate] = useState(false);
+  const [createInviteQuery, setCreateInviteQuery] = useState("");
+  const [createInviteResults, setCreateInviteResults] = useState<User[]>([]);
+  const [createInviteSelected, setCreateInviteSelected] = useState<User[]>([]);
   const [creating, setCreating] = useState(false);
   const [dmQuery, setDmQuery] = useState("");
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [searching, setSearching] = useState(false);
+  const [inviteQuery, setInviteQuery] = useState("");
+  const [inviteResults, setInviteResults] = useState<User[]>([]);
+  const [inviting, setInviting] = useState(false);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim()) return;
     setCreating(true);
     try {
-      await onCreateChannel(newName, newDesc);
+      await onCreateChannel(newName, newDesc, {
+        isPrivate: newPrivate,
+        inviteUserIds: createInviteSelected.map((u) => u.id),
+      });
       setNewName("");
       setNewDesc("");
+      setNewPrivate(false);
+      setCreateInviteQuery("");
+      setCreateInviteResults([]);
+      setCreateInviteSelected([]);
       setShowCreate(false);
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleCreateInviteSearch = async (q: string) => {
+    setCreateInviteQuery(q);
+    if (q.length < 2) {
+      setCreateInviteResults([]);
+      return;
+    }
+    const users = await onSearchUsers(q);
+    setCreateInviteResults(
+      users.filter((u) => !createInviteSelected.some((s) => s.id === u.id))
+    );
+  };
+
+  const handleInviteSearch = async (q: string) => {
+    setInviteQuery(q);
+    if (q.length < 2) {
+      setInviteResults([]);
+      return;
+    }
+    setInviting(true);
+    try {
+      const users = await onSearchUsers(q);
+      setInviteResults(users);
+    } finally {
+      setInviting(false);
     }
   };
 
@@ -140,6 +189,64 @@ export function ChatSidebar({
                   placeholder="Description (optional)"
                   className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white outline-none focus:border-indigo-500"
                 />
+                <label className="flex items-center gap-2 text-xs text-slate-400">
+                  <input
+                    type="checkbox"
+                    checked={newPrivate}
+                    onChange={(e) => setNewPrivate(e.target.checked)}
+                    className="rounded border-slate-600"
+                  />
+                  Private channel (invite only)
+                </label>
+                {newPrivate && (
+                  <div className="space-y-2">
+                    <input
+                      value={createInviteQuery}
+                      onChange={(e) => handleCreateInviteSearch(e.target.value)}
+                      placeholder="Invite students by name or email..."
+                      className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white outline-none focus:border-indigo-500"
+                    />
+                    {createInviteSelected.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {createInviteSelected.map((u) => (
+                          <span
+                            key={u.id}
+                            className="rounded bg-indigo-600/30 px-2 py-0.5 text-xs text-indigo-200"
+                          >
+                            {u.name}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setCreateInviteSelected((prev) =>
+                                  prev.filter((x) => x.id !== u.id)
+                                )
+                              }
+                              className="ml-1 text-indigo-300 hover:text-white"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {createInviteResults.map((user) => (
+                      <button
+                        key={user.id}
+                        type="button"
+                        onClick={() => {
+                          setCreateInviteSelected((prev) => [...prev, user]);
+                          setCreateInviteResults((prev) =>
+                            prev.filter((u) => u.id !== user.id)
+                          );
+                          setCreateInviteQuery("");
+                        }}
+                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-slate-300 hover:bg-slate-700"
+                      >
+                        {user.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <button
                   type="submit"
                   disabled={creating}
@@ -161,11 +268,46 @@ export function ChatSidebar({
                       : "text-slate-300 hover:bg-slate-800 hover:text-white"
                   }`}
                 >
-                  <span className="text-slate-500">#</span>
+                  <span className="text-slate-500">{channel.isPrivate ? "🔒" : "#"}</span>
                   <span className="truncate">{channel.name}</span>
                 </button>
               ))}
+              {channels.length === 0 && (
+                <p className="px-2 text-xs text-slate-500">
+                  Join #general from Discover or create a channel
+                </p>
+              )}
             </nav>
+
+            {activeChannel && (
+              <div className="mb-4 mt-4 rounded-lg border border-slate-700 bg-slate-800/50 p-3">
+                <p className="mb-2 text-xs font-medium text-slate-400">
+                  Invite to {activeChannel.isPrivate ? "🔒" : "#"}
+                  {activeChannel.name}
+                </p>
+                <input
+                  value={inviteQuery}
+                  onChange={(e) => handleInviteSearch(e.target.value)}
+                  placeholder="Search students..."
+                  className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white outline-none focus:border-indigo-500"
+                />
+                {inviting && <p className="mt-1 text-xs text-slate-500">Searching...</p>}
+                {inviteResults.map((user) => (
+                  <button
+                    key={user.id}
+                    type="button"
+                    onClick={async () => {
+                      await onInviteToChannel(activeChannel.id, user);
+                      setInviteQuery("");
+                      setInviteResults([]);
+                    }}
+                    className="mt-1 flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-slate-300 hover:bg-slate-700"
+                  >
+                    {user.name}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {discoverChannels.length > 0 && (
               <>
@@ -204,12 +346,17 @@ export function ChatSidebar({
               <input
                 value={dmQuery}
                 onChange={(e) => handleSearch(e.target.value)}
-                placeholder="Search students..."
+                placeholder="Search by name or email..."
                 className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
               />
+              <p className="mt-1.5 text-xs text-slate-500">Type at least 2 characters</p>
             </div>
 
             {searching && <p className="px-2 text-xs text-slate-500">Searching...</p>}
+
+            {!searching && dmQuery.length >= 2 && searchResults.length === 0 && (
+              <p className="mb-3 px-2 text-xs text-slate-500">No students found</p>
+            )}
 
             {searchResults.length > 0 && (
               <nav className="mb-4 space-y-0.5">

@@ -1,5 +1,6 @@
 import { Router, Response } from "express";
 import { prisma } from "../lib/prisma";
+import { getIO } from "../lib/io";
 import { authMiddleware, AuthRequest } from "../middleware/auth";
 
 const router = Router();
@@ -164,6 +165,17 @@ router.post("/:conversationId/messages", async (req: AuthRequest, res: Response)
     where: { id: conversationId },
     data: { updatedAt: new Date() },
   });
+
+  const participants = await prisma.conversationParticipant.findMany({
+    where: { conversationId },
+    select: { userId: true },
+  });
+
+  const socket = getIO();
+  socket?.to(`dm:${conversationId}`).emit("new_dm_message", { message });
+  for (const p of participants) {
+    socket?.to(`user:${p.userId}`).emit("dm_updated", { conversationId });
+  }
 
   res.status(201).json({ message });
 });

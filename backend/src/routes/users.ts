@@ -13,17 +13,15 @@ router.get("/search", async (req: AuthRequest, res: Response) => {
     return;
   }
 
-  const users = await prisma.user.findMany({
-    where: {
-      id: { not: req.user!.userId },
-      OR: [
-        { name: { contains: q } },
-        { email: { contains: q.toLowerCase() } },
-      ],
-    },
-    select: { id: true, name: true, email: true },
-    take: 20,
-  });
+  const needle = `%${q.toLowerCase()}%`;
+  const users = await prisma.$queryRaw<
+    { id: string; name: string; email: string }[]
+  >`
+    SELECT id, name, email FROM User
+    WHERE id != ${req.user!.userId}
+      AND (LOWER(name) LIKE ${needle} OR LOWER(email) LIKE ${needle})
+    LIMIT 20
+  `;
 
   res.json({ users });
 });

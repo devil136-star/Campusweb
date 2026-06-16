@@ -1,5 +1,6 @@
 import { Router, Response } from "express";
 import { prisma } from "../lib/prisma";
+import { getIO } from "../lib/io";
 import { authMiddleware, AuthRequest } from "../middleware/auth";
 
 const router = Router();
@@ -32,10 +33,11 @@ router.get("/", async (req: AuthRequest, res: Response) => {
 });
 
 router.post("/", async (req: AuthRequest, res: Response) => {
-  const { name, description, isPrivate } = req.body as {
+  const { name, description, isPrivate, inviteUserIds } = req.body as {
     name?: string;
     description?: string;
     isPrivate?: boolean;
+    inviteUserIds?: string[];
   };
 
   if (!name?.trim()) {
@@ -55,7 +57,87 @@ router.post("/", async (req: AuthRequest, res: Response) => {
     },
   });
 
-  res.status(201).json({ channel });
+  const toInvite = (inviteUserIds ?? []).filter(
+    (id) => id && id !== req.user!.userId
+  );
+
+  if (toInvite.length > 0) {
+    await prisma.channelMember.createMany({
+      data: toInvite.map((userId) => ({ userId, channelId: channel.id })),
+      skipDuplicates: true,
+    });
+
+    const socket = getIO();
+    for (const userId of toInvite) {
+      socket?.to(`user:${userId}`).emit("channel_updated");
+    }
+  }
+
+  res.status(201).json({
+    channel: {
+      id: channel.id,
+      name: channel.name,
+      description: channel.description,
+      isPrivate: channel.isPrivate,
+      memberCount: 1 + toInvite.length,
+    },
+  });
+});
+
+router.post("/:id/members", async (req: AuthRequest, res: Response) => {
+  const channelId = req.params.id;
+  const { userId: inviteUserId } = req.body as { userId?: string };
+
+  if (!inviteUserId) {
+    res.status(400).json({ error: "User ID is required" });
+    return;
+  }
+
+  if (inviteUserId === req.user!.userId) {
+    res.status(400).json({ error: "You are already in this channel" });
+    return;
+  }
+
+  const membership = await prisma.channelMember.findUnique({
+    where: {
+      userId_channelId: { userId: req.user!.userId, channelId },
+    },
+  });
+
+  if (!membership) {
+    res.status(403).json({ error: "You are not a member of this channel" });
+    return;
+  }
+
+  const channel = await prisma.channel.findUnique({ where: { id: channelId } });
+  if (!channel) {
+    res.status(404).json({ error: "Channel not found" });
+    return;
+  }
+
+  const inviteUser = await prisma.user.findUnique({
+    where: { id: inviteUserId },
+    select: { id: true, name: true, email: true },
+  });
+
+  if (!inviteUser) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  await prisma.channelMember.upsert({
+    where: {
+      userId_channelId: { userId: inviteUserId, channelId },
+    },
+    create: { userId: inviteUserId, channelId },
+    update: {},
+  });
+
+  const socket = getIO();
+  socket?.to(`user:${inviteUserId}`).emit("channel_updated");
+  socket?.to(`channel:${channelId}`).emit("member_joined", { user: inviteUser });
+
+  res.json({ success: true, user: inviteUser });
 });
 
 router.post("/:id/join", async (req: AuthRequest, res: Response) => {
@@ -84,6 +166,8 @@ router.post("/:id/join", async (req: AuthRequest, res: Response) => {
     },
     update: {},
   });
+
+  getIO()?.to(`user:${req.user!.userId}`).emit("channel_updated");
 
   res.json({ success: true });
 });

@@ -126,10 +126,26 @@ export const api = {
   discoverChannels: (token: string) =>
     request<{ channels: Channel[] }>("/api/channels/discover", {}, token),
 
-  createChannel: (token: string, name: string, description?: string) =>
+  createChannel: (
+    token: string,
+    name: string,
+    description?: string,
+    options?: { isPrivate?: boolean; inviteUserIds?: string[] }
+  ) =>
     request<{ channel: Channel }>("/api/channels", {
       method: "POST",
-      body: JSON.stringify({ name, description }),
+      body: JSON.stringify({
+        name,
+        description,
+        isPrivate: options?.isPrivate,
+        inviteUserIds: options?.inviteUserIds,
+      }),
+    }, token),
+
+  inviteToChannel: (token: string, channelId: string, userId: string) =>
+    request<{ success: boolean; user: User }>(`/api/channels/${channelId}/members`, {
+      method: "POST",
+      body: JSON.stringify({ userId }),
     }, token),
 
   joinChannel: (token: string, channelId: string) =>
@@ -139,6 +155,21 @@ export const api = {
 
   getMessages: (token: string, channelId: string) =>
     request<{ messages: Message[] }>(`/api/messages/${channelId}`, {}, token),
+
+  sendChannelMessage: (
+    token: string,
+    channelId: string,
+    payload: {
+      content?: string;
+      attachmentUrl?: string;
+      attachmentType?: string;
+      attachmentName?: string;
+    }
+  ) =>
+    request<{ message: Message }>(`/api/messages/${channelId}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }, token),
 
   searchUsers: (token: string, query: string) =>
     request<{ users: User[] }>(`/api/users/search?q=${encodeURIComponent(query)}`, {}, token),
@@ -154,6 +185,21 @@ export const api = {
 
   getDmMessages: (token: string, conversationId: string) =>
     request<{ messages: DirectMessage[] }>(`/api/dm/${conversationId}/messages`, {}, token),
+
+  sendDmMessage: (
+    token: string,
+    conversationId: string,
+    payload: {
+      content?: string;
+      attachmentUrl?: string;
+      attachmentType?: string;
+      attachmentName?: string;
+    }
+  ) =>
+    request<{ message: DirectMessage }>(`/api/dm/${conversationId}/messages`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }, token),
 
   uploadFile: async (token: string, file: File): Promise<Attachment> => {
     const form = new FormData();

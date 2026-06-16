@@ -7,6 +7,8 @@ import { Server } from "socket.io";
 import { verifyToken } from "./lib/jwt";
 import { prisma } from "./lib/prisma";
 import { UPLOAD_DIR } from "./lib/upload";
+import { ensureDefaults } from "./lib/defaults";
+import { setIO } from "./lib/io";
 import authRoutes from "./routes/auth";
 import channelRoutes from "./routes/channels";
 import messageRoutes from "./routes/messages";
@@ -42,6 +44,8 @@ const io = new Server(server, {
     methods: ["GET", "POST"],
   },
 });
+
+setIO(io);
 
 app.use(
   cors({
@@ -194,6 +198,12 @@ io.on("connection", (socket) => {
   );
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`CampusWeb API running on http://localhost:${PORT}`);
+  try {
+    await ensureDefaults();
+    console.log("Default channels and memberships ready");
+  } catch (err) {
+    console.error("Failed to ensure defaults:", err);
+  }
 });

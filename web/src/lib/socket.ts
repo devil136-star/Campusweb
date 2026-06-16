@@ -10,6 +10,7 @@ export function getSocket(token: string): Socket {
     socket = io(getApiUrl(), {
       auth: { token },
       autoConnect: false,
+      transports: ["websocket", "polling"],
     });
   }
   return socket;
@@ -25,9 +26,32 @@ export function connectSocket(token: string): Socket {
 }
 
 export function disconnectSocket(): void {
-  if (socket?.connected) {
+  if (socket) {
     socket.disconnect();
+    socket = null;
   }
+}
+
+export function joinChannelRoom(token: string, channelId: string): () => void {
+  const s = connectSocket(token);
+  const join = () => s.emit("join_channel", channelId);
+  if (s.connected) join();
+  else s.on("connect", join);
+  return () => {
+    s.off("connect", join);
+    s.emit("leave_channel", channelId);
+  };
+}
+
+export function joinDmRoom(token: string, conversationId: string): () => void {
+  const s = connectSocket(token);
+  const join = () => s.emit("join_dm", conversationId);
+  if (s.connected) join();
+  else s.on("connect", join);
+  return () => {
+    s.off("connect", join);
+    s.emit("leave_dm", conversationId);
+  };
 }
 
 export type NewMessageHandler = (data: { message: Message }) => void;

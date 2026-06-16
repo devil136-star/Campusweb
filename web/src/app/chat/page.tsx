@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { api, Channel, Conversation, DirectMessage, Message, User } from "@/lib/api";
 import {
-  getSocket,
+  connectSocket,
+  joinChannelRoom,
+  joinDmRoom,
   type DmUpdatedHandler,
   type NewDmMessageHandler,
   type NewMessageHandler,
@@ -66,14 +68,18 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!token) return;
-    const socket = getSocket(token);
+    const socket = connectSocket(token);
 
     const onDmUpdated: DmUpdatedHandler = () => loadConversations();
+    const onChannelUpdated = () => loadChannels();
+
     socket.on("dm_updated", onDmUpdated);
+    socket.on("channel_updated", onChannelUpdated);
     return () => {
       socket.off("dm_updated", onDmUpdated);
+      socket.off("channel_updated", onChannelUpdated);
     };
-  }, [token, loadConversations]);
+  }, [token, loadConversations, loadChannels]);
 
   useEffect(() => {
     if (!token || !activeChannelId || mode !== "channels") return;
@@ -84,8 +90,8 @@ export default function ChatPage() {
       .then(({ messages }) => setChannelMessages(messages))
       .finally(() => setLoadingMessages(false));
 
-    const socket = getSocket(token);
-    socket.emit("join_channel", activeChannelId);
+    const socket = connectSocket(token);
+    const leaveRoom = joinChannelRoom(token, activeChannelId);
 
     const handler: NewMessageHandler = ({ message }) => {
       if (message.channelId === activeChannelId) {
@@ -99,7 +105,7 @@ export default function ChatPage() {
     socket.on("new_message", handler);
     return () => {
       socket.off("new_message", handler);
-      socket.emit("leave_channel", activeChannelId);
+      leaveRoom();
     };
   }, [token, activeChannelId, mode]);
 
@@ -112,8 +118,8 @@ export default function ChatPage() {
       .then(({ messages }) => setDmMessages(messages))
       .finally(() => setLoadingMessages(false));
 
-    const socket = getSocket(token);
-    socket.emit("join_dm", activeConversationId);
+    const socket = connectSocket(token);
+    const leaveRoom = joinDmRoom(token, activeConversationId);
 
     const handler: NewDmMessageHandler = ({ message }) => {
       if (message.conversationId === activeConversationId) {
@@ -127,38 +133,57 @@ export default function ChatPage() {
     socket.on("new_dm_message", handler);
     return () => {
       socket.off("new_dm_message", handler);
-      socket.emit("leave_dm", activeConversationId);
+      leaveRoom();
     };
   }, [token, activeConversationId, mode]);
 
-  const handleChannelSend = (payload: SendPayload) => {
+  const handleChannelSend = async (payload: SendPayload) => {
     if (!token || !activeChannelId) return;
-    getSocket(token).emit("send_message", {
-      channelId: activeChannelId,
+    const body = {
       content: payload.content,
       attachmentUrl: payload.attachment?.url,
       attachmentType: payload.attachment?.type,
       attachmentName: payload.attachment?.name,
+    };
+    const { message } = await api.sendChannelMessage(token, activeChannelId, body);
+    setChannelMessages((prev) => {
+      if (prev.some((m) => m.id === message.id)) return prev;
+      return [...prev, message];
     });
   };
 
-  const handleDmSend = (payload: SendPayload) => {
+  const handleDmSend = async (payload: SendPayload) => {
     if (!token || !activeConversationId) return;
-    getSocket(token).emit("send_dm", {
-      conversationId: activeConversationId,
+    const body = {
       content: payload.content,
       attachmentUrl: payload.attachment?.url,
       attachmentType: payload.attachment?.type,
       attachmentName: payload.attachment?.name,
+    };
+    const { message } = await api.sendDmMessage(token, activeConversationId, body);
+    setDmMessages((prev) => {
+      if (prev.some((m) => m.id === message.id)) return prev;
+      return [...prev, message];
     });
+    loadConversations();
   };
 
-  const handleCreateChannel = async (name: string, description: string) => {
+  const handleCreateChannel = async (
+    name: string,
+    description: string,
+    options: { isPrivate: boolean; inviteUserIds: string[] }
+  ) => {
     if (!token) return;
-    const { channel } = await api.createChannel(token, name, description);
+    const { channel } = await api.createChannel(token, name, description, options);
     await loadChannels();
     setMode("channels");
     setActiveChannelId(channel.id);
+  };
+
+  const handleInviteToChannel = async (channelId: string, otherUser: User) => {
+    if (!token) return;
+    await api.inviteToChannel(token, channelId, otherUser.id);
+    await loadChannels();
   };
 
   const handleJoinChannel = async (channelId: string) => {
@@ -212,6 +237,8 @@ export default function ChatPage() {
         onCreateChannel={handleCreateChannel}
         onJoinChannel={handleJoinChannel}
         onStartDm={handleStartDm}
+        onInviteToChannel={handleInviteToChannel}
+        activeChannel={activeChannel}
         onSearchUsers={(q) => api.searchUsers(token, q).then((r) => r.users)}
         onLogout={() => {
           logout();
@@ -225,7 +252,7 @@ export default function ChatPage() {
             <MessageList
               messages={channelMessages}
               currentUserId={user.id}
-              title={`#${activeChannel.name}`}
+              title={`${activeChannel.isPrivate ? "🔒" : "#"}${activeChannel.name}`}
               subtitle={activeChannel.description}
               emptyText={`No messages yet. Say hello to #${activeChannel.name}!`}
             />
