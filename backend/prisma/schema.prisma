@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages                 Message[]
+  channelMembers           ChannelMember[]
+  createdChannels          Channel[]                 @relation("ChannelCreator")
+  conversationParticipants ConversationParticipant[]
+  directMessages           DirectMessage[]
+}
+
+model Channel {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  isPrivate   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  createdById String
+  createdBy   User     @relation("ChannelCreator", fields: [createdById], references: [id])
+
+  members  ChannelMember[]
+  messages Message[]
+}
+
+model ChannelMember {
+  id        String   @id @default(cuid())
+  userId    String
+  channelId String
+  joinedAt  DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channelId])
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  content        String   @default("")
+  channelId      String
+  userId         String
+  attachmentUrl  String?
+  attachmentType String?
+  attachmentName String?
+  createdAt      DateTime @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participants ConversationParticipant[]
+  messages     DirectMessage[]
+}
+
+model ConversationParticipant {
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String
+  joinedAt       DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+}
+
+model DirectMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  userId         String
+  content        String   @default("")
+  attachmentUrl  String?
+  attachmentType String?
+  attachmentName String?
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

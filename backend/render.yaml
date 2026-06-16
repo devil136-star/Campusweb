@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: campusweb-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PORT
+        value: 4000
+      - key: DATABASE_URL
+        value: file:./dev.db
+      - key: CLIENT_URL
+        value: http://localhost:3000
+      - key: UPLOAD_DIR
+        value: ./uploads
+      - key: NODE_ENV
+        value: production

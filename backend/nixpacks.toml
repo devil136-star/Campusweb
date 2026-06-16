@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["nodejs_22", "python3", "gcc"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npx prisma generate", "npx prisma migrate deploy"]
+
+[start]
+cmd = "npm run start"
